@@ -55,12 +55,20 @@ public class WebController {
 	@GetMapping("/bars")
 	public String listBars(Model model) {
 		model.addAttribute("bars", barService.getAllActiveBars());
+<<<<<<< HEAD
 		return "bars/list";
+=======
+		return "list";
+>>>>>>> 7a54461 (updated with product add)
 	}
 
 	@GetMapping("/bars/new")
 	public String newBarForm() {
+<<<<<<< HEAD
 		return "bars/form";
+=======
+		return "form";
+>>>>>>> 7a54461 (updated with product add)
 	}
 
 	@PostMapping("/bars/new")
@@ -79,12 +87,20 @@ public class WebController {
 	@GetMapping("/products")
 	public String listProducts(Model model) {
 		model.addAttribute("products", productService.getAllActiveProducts());
+<<<<<<< HEAD
 		return "products/list";
+=======
+		return "list";
+>>>>>>> 7a54461 (updated with product add)
 	}
 
 	@GetMapping("/products/new")
 	public String newProductForm() {
+<<<<<<< HEAD
 		return "products/form";
+=======
+		return "productNew";
+>>>>>>> 7a54461 (updated with product add)
 	}
 
 	@PostMapping("/products/new")
@@ -108,6 +124,7 @@ public class WebController {
 		model.addAttribute("bar", bar);
 		model.addAttribute("products", productService.getAllActiveProducts());
 		model.addAttribute("prices", pricingService.getPricesByBar(barId));
+<<<<<<< HEAD
 		return "pricing/manage";
 	}
 
@@ -304,6 +321,210 @@ public class WebController {
 
 	// ================= REST INITIALIZE =================
 
+=======
+		return "manage";
+	}
+
+	@PostMapping("/pricing/{barId}/{productId}")
+	public String savePrice(
+	        @PathVariable Long barId,
+	        @PathVariable Long productId,
+	        @RequestParam BigDecimal sellingPrice,
+	        @RequestParam(required = false) BigDecimal costPrice) {
+
+	    BarProductPrice price = BarProductPrice.builder()
+	            .sellingPrice(sellingPrice)
+	            .costPrice(costPrice != null ? costPrice : BigDecimal.ZERO)
+	            .active(true)
+	            .build();
+
+	    pricingService.setPrice(barId, productId, price);
+
+	    return "redirect:/pricing/" + barId;   // redirect back to same page
+	}
+
+	// ================= SESSIONS =================
+
+	@GetMapping("/sessions/{barId}")
+	public String listSessions(@PathVariable Long barId, Model model) {
+		model.addAttribute("sessions", sessionService.getSessionsByBar(barId));
+		model.addAttribute("bar", barService.getBarById(barId));
+		return "list";
+	}
+
+	@GetMapping("/sessions/{barId}/new")
+	public String newSessionForm(@PathVariable Long barId, Model model) {
+		model.addAttribute("bar", barService.getBarById(barId));
+		return "new";
+	}
+
+	@PostMapping("/sessions/{barId}/new")
+	public String createSession(@PathVariable Long barId, @RequestParam String shiftType,
+			@RequestParam(required = false) String notes) {
+
+		InventorySession inv = sessionService.initializeSession(barId, shiftType, notes);
+		return "redirect:/stockroom/" + inv.getSessionId();
+	}
+
+	// ================= STOCKROOM =================
+
+	@GetMapping("/stockroom/{sessionId}")
+	public String viewStockroom(@PathVariable Long sessionId, Model model) {
+		InventorySession inv = sessionService.getSession(sessionId);
+		List<Product> products = productService.getAllActiveProducts();
+
+		if (products.isEmpty()) {
+			model.addAttribute("error", "No active products found. Please add products first.");
+		}
+
+		// ✅ Pre-fill opening stock from last session's closing stock
+		Map<Long, BigDecimal> previousClosing = sessionService.getPreviousClosingForStockroom(inv.getBar().getBarId());
+
+		model.addAttribute("inv", inv);
+		model.addAttribute("products", products);
+		model.addAttribute("previousClosing", previousClosing);
+		return "stockroom";
+	}
+
+	@PostMapping("/stockroom/{sessionId}")
+	public String saveStockroom(@PathVariable Long sessionId, @RequestParam Map<String, String> formData, Model model) {
+		try {
+			InventorySession inv = sessionService.getSession(sessionId);
+			List<Product> products = productService.getAllActiveProducts();
+			List<StockroomInventory> inventories = new ArrayList<>();
+
+			for (Product product : products) {
+				String opening = formData.get("opening_" + product.getProductId());
+				String received = formData.get("received_" + product.getProductId());
+				String closing = formData.get("closing_" + product.getProductId());
+				String remarks = formData.get("remarks_" + product.getProductId());
+
+				if (opening != null || received != null || closing != null) {
+					StockroomInventory inventory = StockroomInventory.builder().session(inv).product(product)
+							.openingStock(parseDecimal(opening)).receivedStock(parseDecimal(received))
+							.closingStock(parseDecimal(closing)).remarks(remarks).build();
+					inventories.add(inventory);
+				}
+			}
+
+			sessionService.saveStockroomInventory(sessionId, inventories);
+			sessionService.createDistributionRecords(sessionId);
+			return "redirect:/sessions/distribution/" + sessionId;
+
+		} catch (Exception e) {
+			InventorySession inv = sessionService.getSession(sessionId);
+			model.addAttribute("inv", inv);
+			model.addAttribute("products", productService.getAllActiveProducts());
+			model.addAttribute("error", e.getMessage());
+			return "stockroom";
+		}
+	}
+
+	// ================= DISTRIBUTION =================
+
+	@GetMapping("/sessions/distribution/{sessionId}")
+	public String distributionPage(@PathVariable Long sessionId, Model model) {
+		InventorySession inv = sessionService.getSession(sessionId);
+
+		if (inv == null)
+			throw new RuntimeException("Session not found: " + sessionId);
+		if (inv.getBar() == null)
+			throw new RuntimeException("Bar not mapped to session: " + sessionId);
+
+		model.addAttribute("inv", inv);
+		model.addAttribute("bar", inv.getBar());
+		model.addAttribute("sessionId", sessionId);
+		model.addAttribute("wellNames", WellConfig.WELL_NAMES);
+		model.addAttribute("distributions",
+				inv.getDistributionRecords() != null ? inv.getDistributionRecords() : List.of());
+		return "distribution";
+	}
+
+	@PostMapping("/sessions/distribution/{sessionId}/save")
+	public String saveDistributionAllocations(@PathVariable Long sessionId, @RequestParam Map<String, String> formData,
+			Model model) {
+		try {
+			sessionService.saveDistributionAllocations(sessionId, formData);
+			return "redirect:/sessions/wells/" + sessionId;
+
+		} catch (Exception e) {
+			InventorySession inv = sessionService.getSession(sessionId);
+			model.addAttribute("inv", inv);
+			model.addAttribute("bar", inv.getBar());
+			model.addAttribute("sessionId", sessionId);
+			model.addAttribute("wellNames", WellConfig.WELL_NAMES);
+			model.addAttribute("distributions",
+					inv.getDistributionRecords() != null ? inv.getDistributionRecords() : List.of());
+			model.addAttribute("error", e.getMessage());
+			return "distribution";
+		}
+	}
+
+	// ================= WELLS =================
+
+	@GetMapping("/sessions/wells/{sessionId}")
+	public String wellsPage(@PathVariable Long sessionId, Model model) {
+		InventorySession inv = sessionService.getSession(sessionId);
+		Bar bar = inv.getBar();
+
+		Map<Long, BarProductPrice> prices = pricingService.getPriceMapForBar(bar.getBarId());
+
+		Map<String, BigDecimal> distributionMap = sessionService.getDistributionMapForSession(sessionId);
+
+		// ✅ Pre-fill opening stock from last session's well closing stock
+		Map<String, BigDecimal> previousClosing = sessionService.getPreviousClosingForWells(bar.getBarId());
+
+		model.addAttribute("inv", inv);
+		model.addAttribute("bar", bar);
+		model.addAttribute("sessionId", sessionId);
+		model.addAttribute("barId", bar.getBarId());
+		model.addAttribute("prices", prices);
+		model.addAttribute("products", productService.getAllActiveProducts());
+		model.addAttribute("distributionMap", distributionMap);
+		model.addAttribute("previousClosing", previousClosing);
+		model.addAttribute("wellNames", WellConfig.WELL_NAMES);
+		return "wells";
+	}
+
+	// ================= WELL SAVE =================
+
+	@PostMapping("/sessions/wells/{sessionId}/save")
+	@ResponseBody
+	public ResponseEntity<?> saveWellInventory(@PathVariable Long sessionId,
+			@RequestParam Map<String, String> formData) {
+		try {
+			sessionService.saveWellInventoryFromForm(sessionId, formData);
+			return ResponseEntity.ok().build();
+		} catch (Exception e) {
+			return ResponseEntity.badRequest().body(e.getMessage());
+		}
+	}
+
+	// ================= COMMIT =================
+
+	@PostMapping("/api/sessions/{sessionId}/commit")
+	public ResponseEntity<?> commitSession(@PathVariable Long sessionId) {
+		try {
+			sessionService.commitSession(sessionId);
+			return ResponseEntity.ok().build();
+		} catch (Exception e) {
+			return ResponseEntity.badRequest().body(e.getMessage());
+		}
+	}
+
+	// ================= REPORTS =================
+
+	@GetMapping("/reports/{barId}/daily")
+	public String dailyReport(@PathVariable Long barId, @RequestParam(required = false) String date, Model model) {
+		LocalDateTime reportDate = date != null ? LocalDateTime.parse(date) : LocalDateTime.now();
+		model.addAttribute("bar", barService.getBarById(barId));
+		model.addAttribute("report", reportService.getDailySalesReport(barId, reportDate));
+		return "reports/daily";
+	}
+
+	// ================= REST INITIALIZE =================
+
+>>>>>>> 7a54461 (updated with product add)
 	@PostMapping("/initialize")
 	public ResponseEntity<InventorySessionDTO> initializeSession(@RequestParam Long barId,
 			@RequestParam String shiftType, @RequestParam String notes) {
